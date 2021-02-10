@@ -36,7 +36,10 @@ def sensAspec(dici,reg,data_points):
     print('fn:',fn,'tn:',tn,'tp:',tp,'fp:',fp)
     sens =  tp/(tp + fn)
     spec = 1-(fp/(fp+tn))
+    PPV = tp/(tp+fp)
+    NPV = tn/(tn+fn)
     print('Sensitivity: ',sens,'Specificity: ',spec)
+    print("PPV: ",PPV,"NPV: ",NPV)
     return sens, spec
 
 def my_stats(arr,att):

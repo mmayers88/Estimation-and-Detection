@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy
+import argparse
 
 
 #=====================================================
@@ -11,38 +13,114 @@ windowSize = 25
 #=====================================================
 #Gaussian noise settings
 #=====================================================
-mu, sigma = 0, 1
+mu = 0
 
 #=====================================================
 #ML Settings
 #=====================================================
-pi_0 = .5
-pi_1 = .5
-c_00 = 0
-c_01 = 0
-c_10 = 0
-c_11 = 0
+pi = [0,0]
+pi[0] = .5
+pi[1] = .5
+c = [[0, 0],[0 ,0]]
+c[0][0] = 0 #TN
+c[0][1] = 1 #FP
+c[1][0] = 10 #FN
+c[1][1] = 0 #TP
 
 
-def veri(TP,pred):
-    bins = [0] * len(TP)
-    for i in range(len(TP)):
-        for j in pred:
+
+def SNR(clean,noise):
+    x = 0
+    y = 0
+    for i in clean:
+        x += i**2
+    for j in noise:
+        y += j**2
+    x = x/len(clean)
+    y = y/len(noise)
+    snr = x/y
+    return snr
+
+
+def bayes_risk(pf,pd):
+    R = c[0][0]*pi[0] +  c[0][1]*pi[1] + (c[1][0]-c[0][0])*pf *pi[0] +(c[1][1]-c[0][1])*pd* pi[1]
+    return R
+
+def E_half(sig):
+    E = np.inner(sig,sig)
+    E = np.sqrt(E)
+    return E
+
+def makeRange(truePoints):
+    start  = np.array([])
+    end  = np.array([])
+    for i in truePoints:
+        #check within a second
+        start = np.append(start,(i-6))
+        end = np.append(end,(i+6))
+    return start,end
+
+def Theta():
+    theta = ((c[1][0]-c[0][0])*pi[0])/((c[0][1]-c[1][1])*pi[1])
+    theta_log = np.log(theta)
+    return theta_log
+
+def sensAspec(dici,reg,data_points):
+    if 0 not in  dici:
+        dici[0] = 0
+    if 1 not in  dici:
+        dici[1] = 0
+    for i in range(2,20):
+        if i in dici:
+            dici[1] += dici[i]
+
+    fn = dici[0]
+    tn = data_points-(reg)
+    tp = int(dici[1])
+    fp = (dici['pred']) - (tp) 
+    if fp < 0:
+        fp = 0
+    #print('fn:',fn,'tn:',tn,'tp:',tp,'fp:',fp)
+    sens =  tp/(tp + fn)
+    spec = 1-(fp/(fp+tn))
+    PPV = tp/(tp+fp)
+    NPV = tn/(tn+fn)
+    print('Sensitivity: ',sens,'Specificity: ',spec)
+    print("PPV: ",PPV,"NPV: ",NPV)
+    return sens, spec, (1-PPV)
+
+def my_stats(arr,att):
+    unique, counts = np.unique(arr, return_counts=True)
+    stats = dict(zip(unique, counts))
+    stats['pred'] = len(att)
+    #print(stats)
+    return stats
+
+def veri(beg,end,steps):
+    #print(beg,end)
+    #beg=np.multiply(beg,samplerate)
+    #end=np.multiply(end,samplerate)
+    bins = [0] * len(beg)
+    for i in range(len(beg)):
+        for j in steps:
             #print(beg[i],j,end[i])
-            if TP[i] == j:
+            if j <= end[i] and j >= beg[i]:
                 bins[i] += 1
-           
+    #print(bins)            
     return bins
 
 def likly(window, sig):
+    E=E_half(sig)
     LHS = 0
     for i,k in enumerate(window):
         LHS += k*(sig[i])
-    return (LHS)
-    #return (LHS/sigma)
+    #return (LHS)
+    return (LHS/E)
 
-def RHS(window,sig):
-    rhs = np.inner(sig,window)/2
+def RHS(window,sig,sigma):
+    E = E_half(sig)
+    theta = Theta()
+    rhs = (E/2)+((sigma/E)*theta)
     return rhs
 
 def get_eta(sig):
@@ -50,20 +128,21 @@ def get_eta(sig):
     return eta
 
 
-def magic(window,sig):
+def magic(window,sig,sigma):
     LHS = likly(window,sig)
-    Right_Side = RHS(sig,sig)
+    Right_Side = RHS(sig,sig,sigma)
+    #Right_Side =  Theta()
     #print(LHS,Right_Side)
     if LHS >= Right_Side:
-        #print(LHS,Right_Side)
+        #print(LHS,Right_Side,RHS(sig,sig,sigma))
         return True
     return False
 
-def analyze(signal,sig):
+def analyze(signal,sig,sigma):
     prediction = np.array([])
     for i in range((len(signal)-windowSize)):
         window = np.array(signal[ i : (i+windowSize) ]) #make a window
-        if magic(window,sig) ==  True:
+        if magic(window,sig,sigma) ==  True:
             #print(i,(i+windowSize))
             prediction = np.append(prediction,i)
     return prediction
@@ -78,17 +157,17 @@ def make_sig(sig):
         if np.all(testSig == 0) == True:
             for j in range(len(sig)):
                 signal[i+j] = sig[j]
-            print(i,(i+windowSize))
+            #print(i,(i+windowSize))
             dropPoints = np.append(dropPoints,i)
         else:
             continue
     return signal, dropPoints
 
 
-def filthify(sig): 
+def filthify(sig,sigma): 
     noise = np.random.normal(mu, sigma, len(sig)) 
     dirtySig =  sig + noise
-    return dirtySig
+    return dirtySig,noise
 
 def graph(sig,time):
     plt.figure(figsize=(19,9))
@@ -97,26 +176,79 @@ def graph(sig,time):
     return
 
 def small_sample():
+    x = 0
     sig = np.array([.1,.2,.3,.4,.5,1,1,-1,-1,-.5,-.4,-.3,-.2,-.1,.3,.4,1,-1,-.1,-.2,-.5,.6,.9,.2,-1])
+    for i in sig:
+        x += i**2
+    x = x / len(sig)
+    print("Average Power: ",x)
     return sig
 
-def main():
+def predict(sig,dirty_signal,TP,sigma):
+    pred = analyze(dirty_signal,sig,sigma)
+    start,end = makeRange(TP)
+    bins = veri(start,end,pred)
+    #print("Correctness: {}%".format(veri(TP,pred)))
+    stats = my_stats(bins,pred)
+    sens,spec,NPV = sensAspec(stats,10,10000)
+    return sens,pred,NPV
+
+def loopy():
     sig = small_sample()
     tim = np.linspace(0,len(sig),len(sig))
-    #graph(sig,tim)
+    graph(sig,tim)
     signal,TP = make_sig(sig)
     time = tim = np.linspace(0,len(signal),len(signal))
-    dirty_signal = filthify(signal)
+    graph(signal,time)
+    y = np.array([])
+    x = np.array([])
+    for i in range(100,2,-1):
+        sigma = i/100
+        
+        dirty_signal,noise = filthify(signal,sigma)
+        #graph(dirty_signal,time)
+        sens,pred,NPV = predict(sig,dirty_signal,TP,sigma)
+        br =bayes_risk(NPV,sens)
+        y = np.append(y,br)
+        x = np.append(x,SNR(signal,noise))
+        print("SNR: ",SNR(signal,noise), "Bayes Risk: ", br)
+    plt.figure(figsize=(19,9))
+    plt.plot(x,y,label = "BR/SNR")
+    plt.xlabel("SNR")
+    plt.ylabel("Bayes Risk")
+    plt.legend()
+    plt.show()
+
+def main(sigma):
+    sig = small_sample()
+    tim = np.linspace(0,len(sig),len(sig))
+    graph(sig,tim)
+    signal,TP = make_sig(sig)
+    time = np.linspace(0,len(signal),len(signal))
+    dirty_signal,noise = filthify(signal,sigma)
     #graph(dirty_signal,time)
     plt.figure(figsize=(19,9))
     plt.plot(time,dirty_signal,label = "dirty")
     plt.plot(time,signal,label="clean signal")
     plt.legend()
     plt.show()
-    pred = analyze(dirty_signal,sig)
-    print(veri(TP,pred))
-    #print("Correctness: {}%".format(veri(TP,pred)))
-    return
+
+    sens,pred = predict(sig,dirty_signal,TP,sigma)
+    plt.figure(figsize=(19,9))
+    plt.plot(time,dirty_signal,label = "dirty")
+    plt.plot(time,signal,label="clean signal")
+    plt.vlines(pred,1,4,colors="red")
+    plt.legend()
+    plt.show()
+
+    print("SNR: ", SNR(signal,noise))
+    
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--sigma', '-s', default=.1, type=float,
+                        help='STD')
+    args = parser.parse_args()
+
+    #main(args.sigma)
+    loopy()
