@@ -52,7 +52,7 @@ def sensAspec(dici,reg,data_points):
     NPV = tn/(tn+fn)
     print('Sensitivity: ',sens,'Specificity: ',spec)
     print("PPV: ",PPV,"NPV: ",NPV)
-    return sens, spec, (1-PPV), PPV
+    return sens, spec, NPV, PPV
 
 def veri(beg,end,steps):
     #print(beg,end)
@@ -142,7 +142,7 @@ def sigSearch(data, samp):
     slide = windSize//4
     pos = np.array([])
     lhs_array = np.array([])
-    for i in range(windSize,len(data),slide):
+    for i in range(windSize,len(data),1):
         window = data[i-windSize:i]
         yay,lhs_sing = likelihoodRatio(window,samp)
         lhs_array = np.append(lhs_array,lhs_sing)
@@ -166,27 +166,29 @@ def fileRead():
             sens,spec,NPV,PPV = main(fi)
             temp = np.array([sens,spec,NPV,PPV])
             statsData = np.vstack((statsData,temp))
-    #np.savetxt("muhStatsHH.csv", statsData, delimiter=",",fmt='%.4f')############################################
+    #np.savetxt("muhStatsBest.csv", statsData, delimiter=",",fmt='%.4f')############################################
 
 def main(fName):
     data,spikes = getData(fName)
-    print("len: ",len(data))
+    #print("len: ",len(data))
     meanSample = np.genfromtxt('meanBitch10.csv', delimiter=',').reshape(-1,1)  
     #print("Truth: ",len(spikes))
     time = np.linspace(0,len(data),len(data))
     pos,lhs_array = sigSearch(data,meanSample)
     #print("Lies: ",len(pos))
     
-    winds= np.linspace(len(meanSample),len(data),len(data)//(len(meanSample)//4)-3)
+    #winds= np.linspace(len(meanSample),len(data),len(data)//(len(meanSample)//4)-3)
     fig, axs = plt.subplots(2)
     fig.suptitle('Predictions and Filtered')
     fig.set_size_inches(20,10)
-    axs[0].plot(time, data)
     for i in pos:
-        axs[0].axvline(i,color='red')
-    axs[1].plot(winds,lhs_array)
+        axs[0].axvline(i,color='orange')
+    axs[0].plot(time, data)
+    
+    axs[1].plot(time[len(meanSample):],lhs_array)
     axs[1].axhline(RHS(meanSample),color = 'red')
     plt.show()
+    
     
     #_,pos = hu.run(fName,1000,11,1,.1,0,1)
     sens,spec,NPV,PPV = predict(pos,spikes)
